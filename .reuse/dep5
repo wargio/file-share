@@ -1,0 +1,12 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: deroad
+Upstream-Contact: deroad <wargio@libero.it>
+Source: https://github.com/wargio/file-share
+
+Files: templates/**
+Copyright: 2018-2024 deroad <wargio@libero.it>
+License: GPL-3.0-or-later
+
+Files: assets.go go.mod go.sum README.md .gitignore
+Copyright: 2018-2024 deroad <wargio@libero.it>
+License: GPL-3.0-or-later
