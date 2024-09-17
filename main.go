@@ -98,6 +98,12 @@ func main() {
 		uri := "/share/" + RandString(16) + "/" + name
 		nameUri[name] = uri
 		uriFile[uri] = file
+		// preview path on the terminal
+		prefix := "http://"
+		if bind[0] == ':' {
+			prefix += "127.0.0.1"
+		}
+		fmt.Println(prefix + bind + uri)
 	}
 
 	gin.DisableConsoleColor()
