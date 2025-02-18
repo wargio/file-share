@@ -13,12 +13,15 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
+	"time"
 )
 
 var (
-	nameUri = map[string]string{}
-	uriFile = map[string]string{}
+	nameUri   = map[string]string{}
+	uriFile   = map[string]string{}
+	uploadDir string
 )
 
 func RandString(n int) string {
@@ -79,31 +82,44 @@ func detectContentType(file string, content []byte) string {
 
 func main() {
 	var bind string
-	var debug bool
+	var debug, upload bool
 
 	flag.StringVar(&bind, "bind", ":8080", "[address]:[port] address to bind to.")
 	flag.BoolVar(&debug, "debug", false, "enable http debug logs.")
+	flag.BoolVar(&upload, "upload", false, "act as upload server")
 	flag.Parse()
-	files := flag.Args()
+	args := flag.Args()
 
-	if len(files) < 1 {
-		panic("no files where supplied as argument")
-	}
-
-	for _, file := range files {
-		if _, err := os.Stat(file); err != nil {
+	if upload {
+		if len(args) != 1 {
+			panic("please provide a destination folder.")
+		}
+		uploadDir = args[0]
+		s, err := os.Stat(uploadDir)
+		if err != nil {
 			panic(err)
+		} else if !s.IsDir() {
+			panic("please provide a valid destination folder: " + uploadDir + " is not a directory")
 		}
-		name := path.Base(file)
-		uri := "/share/" + RandString(16) + "/" + name
-		nameUri[name] = uri
-		uriFile[uri] = file
-		// preview path on the terminal
-		prefix := "http://"
-		if bind[0] == ':' {
-			prefix += "127.0.0.1"
+	} else {
+		if len(args) < 1 {
+			panic("no files where supplied as argument")
 		}
-		fmt.Println(prefix + bind + uri)
+		for _, file := range args {
+			if _, err := os.Stat(file); err != nil {
+				panic(err)
+			}
+			name := path.Base(file)
+			uri := "/share/" + RandString(16) + "/" + name
+			nameUri[name] = uri
+			uriFile[uri] = file
+			// preview path on the terminal
+			prefix := "http://"
+			if bind[0] == ':' {
+				prefix += "127.0.0.1"
+			}
+			fmt.Println(prefix + bind + uri)
+		}
 	}
 
 	gin.DisableConsoleColor()
@@ -120,6 +136,21 @@ func main() {
 		panic(err)
 	}
 	router.SetHTMLTemplate(templates)
+	if upload {
+		router.POST("/upload", func(c *gin.Context) {
+			file, _ := c.FormFile("file")
+			name := strings.TrimSpace(path.Base(file.Filename))
+			if name == "" {
+				name = "bin_" + time.Now().Format("2006.01.02_15.04.05")
+			}
+			dst := filepath.Join(uploadDir, name)
+
+			fmt.Println("uploading to", dst)
+
+			c.SaveUploadedFile(file, dst)
+			c.String(http.StatusOK, fmt.Sprintf("'%s' uploaded!", name))
+		})
+	}
 	router.GET("/static/:file", func(c *gin.Context) {
 		file := c.Param("file")
 		content, err := loadAsset(file)
@@ -134,13 +165,26 @@ func main() {
 		contentType := detectContentType(file, content)
 		c.Data(200, contentType, content)
 	})
-	router.GET("/", func(c *gin.Context) {
-		c.HTML(200, "index.tmpl", gin.H{
-			"files": nameUri,
+	if upload {
+		router.GET("/", func(c *gin.Context) {
+			c.HTML(200, "upload.tmpl", gin.H{
+				"files": nameUri,
+			})
 		})
-	})
-	for uri, file := range uriFile {
-		router.StaticFile(uri, file)
+	} else {
+		router.GET("/", func(c *gin.Context) {
+			c.HTML(200, "index.tmpl", gin.H{
+				"files": nameUri,
+			})
+		})
+		for uri, file := range uriFile {
+			router.StaticFile(uri, file)
+		}
 	}
+	prefix := ""
+	if bind[0] == ':' {
+		prefix += "127.0.0.1"
+	}
+	fmt.Println("server running: http://" + prefix + bind)
 	router.Run(bind)
 }
