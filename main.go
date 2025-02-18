@@ -94,7 +94,8 @@ func main() {
 		if len(args) != 1 {
 			panic("please provide a destination folder.")
 		}
-		uploadDir = args[0]
+		var err error
+		uploadDir, err = filepath.Abs(args[0])
 		s, err := os.Stat(uploadDir)
 		if err != nil {
 			panic(err)
