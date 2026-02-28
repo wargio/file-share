@@ -22,6 +22,7 @@ var (
 	nameUri   = map[string]string{}
 	uriFile   = map[string]string{}
 	uploadDir string
+	bind      string
 )
 
 func RandString(n int) string {
@@ -80,8 +81,34 @@ func detectContentType(file string, content []byte) string {
 	return http.DetectContentType(content)
 }
 
+func addFile(userPath string) {
+	name := path.Base(userPath)
+	uri := "/share/" + RandString(16) + "/" + name
+	nameUri[name] = uri
+	uriFile[uri] = userPath
+	// preview path on the terminal
+	prefix := "http://"
+	if bind[0] == ':' {
+		prefix += "127.0.0.1"
+	}
+	fmt.Println(prefix + bind + uri)
+}
+
+func walkDir(userPath string) {
+	filepath.Walk(userPath, func(wpath string, info os.FileInfo, err error) error {
+		if err != nil {
+			fmt.Println(err)
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		addFile(wpath)
+		return nil
+	})
+}
+
 func main() {
-	var bind string
 	var debug, upload bool
 
 	flag.StringVar(&bind, "bind", ":8080", "[address]:[port] address to bind to.")
@@ -106,20 +133,16 @@ func main() {
 		if len(args) < 1 {
 			panic("no files where supplied as argument")
 		}
-		for _, file := range args {
-			if _, err := os.Stat(file); err != nil {
+		for _, userPath := range args {
+			stat, err := os.Stat(userPath)
+			if err != nil {
 				panic(err)
 			}
-			name := path.Base(file)
-			uri := "/share/" + RandString(16) + "/" + name
-			nameUri[name] = uri
-			uriFile[uri] = file
-			// preview path on the terminal
-			prefix := "http://"
-			if bind[0] == ':' {
-				prefix += "127.0.0.1"
+			if stat.IsDir() {
+				walkDir(userPath)
+			} else {
+				addFile(userPath)
 			}
-			fmt.Println(prefix + bind + uri)
 		}
 	}
 
