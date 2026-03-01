@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2018-2024 deroad <wargio@libero.it>
+// SPDX-FileCopyrightText: 2018-2026 deroad <wargio@libero.it>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 package main
@@ -23,6 +23,7 @@ var (
 	uriFile   = map[string]string{}
 	uploadDir string
 	bind      string
+	quiet     bool
 )
 
 func RandString(n int) string {
@@ -86,12 +87,14 @@ func addFile(userPath string) {
 	uri := "/share/" + RandString(16) + "/" + name
 	nameUri[name] = uri
 	uriFile[uri] = userPath
-	// preview path on the terminal
-	prefix := "http://"
-	if bind[0] == ':' {
-		prefix += "127.0.0.1"
+	if !quiet {
+		// preview path on the terminal
+		prefix := "http://"
+		if bind[0] == ':' {
+			prefix += "127.0.0.1"
+		}
+		fmt.Println(prefix + bind + uri)
 	}
-	fmt.Println(prefix + bind + uri)
 }
 
 func walkDir(userPath string) {
@@ -113,6 +116,7 @@ func main() {
 
 	flag.StringVar(&bind, "bind", ":8080", "[address]:[port] address to bind to.")
 	flag.BoolVar(&debug, "debug", false, "enable http debug logs.")
+	flag.BoolVar(&quiet, "quiet", false, "makes the output more quiet.")
 	flag.BoolVar(&upload, "upload", false, "act as upload server")
 	flag.Parse()
 	args := flag.Args()
@@ -177,6 +181,10 @@ func main() {
 	}
 	router.GET("/static/:file", func(c *gin.Context) {
 		file := c.Param("file")
+		if len(file) < 1 {
+			c.Status(400)
+			return
+		}
 		content, err := loadAsset(file)
 		if content == nil && err == nil {
 			c.Status(404)
@@ -201,14 +209,31 @@ func main() {
 				"files": nameUri,
 			})
 		})
-		for uri, file := range uriFile {
-			router.StaticFile(uri, file)
+		router.GET("/share/*file", func(c *gin.Context) {
+			file := c.Param("file")
+			if len(file) < 1 {
+				c.Status(400)
+				return
+			}
+
+			fileloc, ok := uriFile["/share"+file]
+			if !ok {
+				c.Status(404)
+				return
+			}
+
+			if c.DefaultQuery("bin", "false") == "true" {
+				c.Header("Content-Type", "application/octet-stream")
+			}
+			c.File(fileloc)
+		})
+	}
+	if !quiet {
+		prefix := ""
+		if bind[0] == ':' {
+			prefix += "127.0.0.1"
 		}
+		fmt.Println("server running: http://" + prefix + bind)
 	}
-	prefix := ""
-	if bind[0] == ':' {
-		prefix += "127.0.0.1"
-	}
-	fmt.Println("server running: http://" + prefix + bind)
 	router.Run(bind)
 }
