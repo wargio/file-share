@@ -16,8 +16,11 @@ import (
 	"strings"
 	"time"
 	"embed"
+	"errors"
 	"io/fs"
 )
+
+type VarMap map[string]string
 
 var (
 	nameUri   = map[string]string{}
@@ -26,9 +29,23 @@ var (
 	uploadDir string
 	bind      string
 	quiet     bool
+	basicauth = VarMap{}
 	//go:embed embedded/*
 	embedded embed.FS
 )
+
+func(ma *VarMap) String() string {
+	return fmt.Sprintf("%v", *ma)
+}
+
+func (ma *VarMap) Set(value string) error {
+	tok := strings.SplitN(value, ":", 2)
+	if len(tok) != 2 {
+		return errors.New("missing : for the password")
+	}
+    (*ma)[tok[0]] = tok[1]
+    return nil
+}
 
 func RandString(n int) string {
 	const encoding = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
@@ -120,6 +137,7 @@ func main() {
 	flag.BoolVar(&debug, "debug", false, "enable http debug logs.")
 	flag.BoolVar(&quiet, "quiet", false, "makes the output more quiet.")
 	flag.BoolVar(&upload, "upload", false, "act as upload server")
+	flag.Var(&basicauth, "auth", "adds basic auth user, example `-auth user:password`.")
 	flag.Parse()
 	args := flag.Args()
 
@@ -161,13 +179,27 @@ func main() {
 
 	router := gin.Default()
 
+	webUi := router.Group("/ui")
+
+    router.GET("/", func(c *gin.Context) {
+        c.Redirect(http.StatusMovedPermanently, "/ui/")
+    })
+
+	if len(basicauth) > 0 {
+		ga := gin.Accounts{}
+		for key, val := range basicauth {
+			ga[key] = val
+		}
+		webUi.Use(gin.BasicAuth(ga))
+	}
+
 	templates, err := loadEmbedded()
 	if err != nil {
 		panic(err)
 	}
 	router.SetHTMLTemplate(templates)
 	if upload {
-		router.POST("/upload", func(c *gin.Context) {
+		webUi.POST("/upload", func(c *gin.Context) {
 			file, _ := c.FormFile("file")
 			name := strings.TrimSpace(path.Base(file.Filename))
 			if name == "" {
@@ -181,7 +213,8 @@ func main() {
 			c.String(http.StatusOK, fmt.Sprintf("'%s' uploaded!", name))
 		})
 	}
-	router.GET("/static/:file", func(c *gin.Context) {
+
+	webUi.GET("static/:file", func(c *gin.Context) {
 		file := c.Param("file")
 		if len(file) < 1 {
 			c.Status(400)
@@ -200,11 +233,11 @@ func main() {
 		c.Data(200, contentType, content)
 	})
 	if upload {
-		router.GET("/", func(c *gin.Context) {
+		webUi.GET("/", func(c *gin.Context) {
 			c.HTML(200, "upload.tmpl", gin.H{})
 		})
 	} else {
-		router.GET("/", func(c *gin.Context) {
+		webUi.GET("/", func(c *gin.Context) {
 			c.HTML(200, "index.tmpl", gin.H{
 				"name_uri": nameUri,
 				"name_date": nameDate,
