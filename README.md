@@ -15,12 +15,3 @@ share-file file1 file2 file3
 go mod download
 CGO_ENABLED=0 go build
 ```
-
-## Update assets.go
-
-You will need to install [go-assets-builder](https://github.com/jessevdk/go-assets-builder)
-
-```bash
-go-assets-builder templates/ -o assets.go -s /templates/
-CGO_ENABLED=0 go build
-```

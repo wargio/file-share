@@ -9,21 +9,25 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"html/template"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 	"time"
+	"embed"
+	"io/fs"
 )
 
 var (
 	nameUri   = map[string]string{}
+	nameDate  = map[string]string{}
 	uriFile   = map[string]string{}
 	uploadDir string
 	bind      string
 	quiet     bool
+	//go:embed embedded/*
+	embedded embed.FS
 )
 
 func RandString(n int) string {
@@ -44,33 +48,30 @@ func loadAsset(file string) ([]byte, error) {
 	if strings.HasSuffix(file, ".tmpl") {
 		return nil, nil
 	}
-	asset, err := Assets.Open(file)
-	if err != nil {
-		return nil, nil
-	}
-	content, err := ioutil.ReadAll(asset)
-	if err != nil {
-		return nil, err
-	}
-	return content, nil
+
+	subpath := path.Join("embedded", file)
+	return embedded.ReadFile(subpath)
 }
 
 func loadEmbedded() (*template.Template, error) {
 	t := template.New("")
-	for name, file := range Assets.Files {
-		if file.IsDir() || !strings.HasSuffix(name, ".tmpl") {
-			continue
-		}
-		h, err := ioutil.ReadAll(file)
+	err := fs.WalkDir(embedded, ".", func(name string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil, err
+			return err
+		} else if d.IsDir() || !strings.HasSuffix(name, ".tmpl") {
+			return nil
 		}
-		t, err = t.New(path.Base(name)).Parse(string(h))
+		content, err := embedded.ReadFile(name)
 		if err != nil {
-			return nil, err
+			return err
 		}
-	}
-	return t, nil
+		t, err = t.New(path.Base(name)).Parse(string(content))
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	return t, err
 }
 
 func detectContentType(file string, content []byte) string {
@@ -82,10 +83,11 @@ func detectContentType(file string, content []byte) string {
 	return http.DetectContentType(content)
 }
 
-func addFile(userPath string) {
+func addFile(userPath string, modTime time.Time) {
 	name := path.Base(userPath)
 	uri := "/share/" + RandString(16) + "/" + name
 	nameUri[name] = uri
+	nameDate[name] = modTime.Format(time.RFC1123)
 	uriFile[uri] = userPath
 	if !quiet {
 		// preview path on the terminal
@@ -106,7 +108,7 @@ func walkDir(userPath string) {
 		if info.IsDir() {
 			return nil
 		}
-		addFile(wpath)
+		addFile(wpath, info.ModTime())
 		return nil
 	})
 }
@@ -145,7 +147,7 @@ func main() {
 			if stat.IsDir() {
 				walkDir(userPath)
 			} else {
-				addFile(userPath)
+				addFile(userPath, stat.ModTime())
 			}
 		}
 	}
@@ -199,14 +201,13 @@ func main() {
 	})
 	if upload {
 		router.GET("/", func(c *gin.Context) {
-			c.HTML(200, "upload.tmpl", gin.H{
-				"files": nameUri,
-			})
+			c.HTML(200, "upload.tmpl", gin.H{})
 		})
 	} else {
 		router.GET("/", func(c *gin.Context) {
 			c.HTML(200, "index.tmpl", gin.H{
-				"files": nameUri,
+				"name_uri": nameUri,
+				"name_date": nameDate,
 			})
 		})
 		router.GET("/share/*file", func(c *gin.Context) {
