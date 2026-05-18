@@ -5,26 +5,28 @@ package main
 
 import (
 	"crypto/rand"
+	"embed"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"html/template"
+	"io/fs"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
-	"embed"
-	"errors"
-	"io/fs"
 )
 
 type VarMap map[string]string
 
 var (
+	names     = []string{}
 	nameUri   = map[string]string{}
-	nameDate  = map[string]string{}
+	nameDate  = map[string]time.Time{}
 	uriFile   = map[string]string{}
 	uploadDir string
 	bind      string
@@ -34,7 +36,7 @@ var (
 	embedded embed.FS
 )
 
-func(ma *VarMap) String() string {
+func (ma *VarMap) String() string {
 	return fmt.Sprintf("%v", *ma)
 }
 
@@ -43,8 +45,8 @@ func (ma *VarMap) Set(value string) error {
 	if len(tok) != 2 {
 		return errors.New("missing : for the password")
 	}
-    (*ma)[tok[0]] = tok[1]
-    return nil
+	(*ma)[tok[0]] = tok[1]
+	return nil
 }
 
 func RandString(n int) string {
@@ -103,8 +105,9 @@ func detectContentType(file string, content []byte) string {
 func addFile(userPath string, modTime time.Time) {
 	name := path.Base(userPath)
 	uri := "/share/" + RandString(16) + "/" + name
+	names = append(names, name)
 	nameUri[name] = uri
-	nameDate[name] = modTime.Format(time.RFC1123)
+	nameDate[name] = modTime
 	uriFile[uri] = userPath
 	if !quiet {
 		// preview path on the terminal
@@ -181,9 +184,9 @@ func main() {
 
 	webUi := router.Group("/ui")
 
-    router.GET("/", func(c *gin.Context) {
-        c.Redirect(http.StatusMovedPermanently, "/ui/")
-    })
+	router.GET("/", func(c *gin.Context) {
+		c.Redirect(http.StatusMovedPermanently, "/ui/")
+	})
 
 	if len(basicauth) > 0 {
 		ga := gin.Accounts{}
@@ -238,8 +241,18 @@ func main() {
 		})
 	} else {
 		webUi.GET("/", func(c *gin.Context) {
+			uSort := c.Query("sort")
+			sort.Slice(names, func(i, j int) bool {
+				a := names[i]
+				b := names[j]
+				if uSort == "date" {
+					return nameDate[a].Before(nameDate[b])
+				}
+				return a < b
+			})
 			c.HTML(200, "index.tmpl", gin.H{
-				"name_uri": nameUri,
+				"names":     names,
+				"name_uri":  nameUri,
 				"name_date": nameDate,
 			})
 		})

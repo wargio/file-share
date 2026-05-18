@@ -18,8 +18,8 @@
 <body style="margin: 30px;">
     <div class="pure-menu">
         <h1>Share</h1>
-        <ul class="pure-menu-list">{{ range $name, $path := .name_uri }}
-            <li class="pure-menu-item"><a class="pure-menu-link" href="{{ $path }}">{{ $name }}<span class="date">{{ index $.name_date $name }}</span></a></li><br>{{ end }}
+        <ul class="pure-menu-list">{{ range $idx, $name := .names }}
+            <li class="pure-menu-item"><a class="pure-menu-link" href="{{ index $.name_uri $name }}">{{ $name }}<span class="date">{{ (index $.name_date $name).Format "02 Jan 06 15:04 MST" }}</span></a></li><br>{{ end }}
         </ul>
     </div>
 </body>
